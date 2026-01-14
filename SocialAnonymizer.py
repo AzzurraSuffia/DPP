@@ -2,6 +2,7 @@ import networkx as nx
 from networkx.algorithms import isomorphism
 from functools import cmp_to_key
 from MDFScoder import MDFSCoder
+from utils import plot_component
 
 class SocialAnonymizer:
     def __init__(self, alpha: float, beta: float, gamma: float):
@@ -473,7 +474,7 @@ class SocialAnonymizer:
         current_subgraph_u = G.subgraph(list(current_u_nodes) + [u])
         
         for e in current_subgraph_u.edges():
-            if not (e in original_u_edges or (e[1], e[0]) in original_u_edges):
+            if (e[0], e[1]) not in original_u_edges and (e[1], e[0]) not in original_u_edges:
                 changes.append({'type': 'add_edge', 'u': e[0], 'v': e[1]})
                 touched_nodes.add(e[0])
                 touched_nodes.add(e[1])
@@ -486,7 +487,7 @@ class SocialAnonymizer:
 
         current_subgraph_v = G.subgraph(list(current_v_nodes) + [v])
         for e in current_subgraph_v.edges():
-            if not (e in original_v_edges or (e[1], e[0]) in original_v_edges):
+            if (e[0], e[1]) not in original_v_edges and (e[1], e[0]) not in original_v_edges:
                 touched_nodes.add(e[0])
                 touched_nodes.add(e[1])
 
@@ -495,13 +496,6 @@ class SocialAnonymizer:
     def anonymize_graph(self, G: nx.Graph, k: int) -> tuple[nx.Graph, dict]:
         """
         Main method: Anonymize the graph to satisfy k-anonymity.
-        
-        Args:
-            G: Input graph
-            k: Anonymity parameter (minimum group size)
-            
-        Returns:
-            Tuple of (anonymized graph, equivalence class dictionary)
         """
         G_anon = G.copy()
         VertexList = sorted(G_anon.nodes, key=lambda v: self.neighborhood_size_key(G_anon, v), reverse=True)
@@ -513,6 +507,7 @@ class SocialAnonymizer:
             SeedVertex = VertexList.pop(0)
             deg_seed = G_anon.degree[SeedVertex]
 
+            # --- Candidate Selection ---
             costs = {}
             for v in VertexList:
                 deg_v = G_anon.degree[v]
@@ -524,46 +519,90 @@ class SocialAnonymizer:
             else: 
                 candidate_set = VertexList.copy()
 
-            for v in [SeedVertex] + candidate_set:
-                EquivalenceClassDict[v] = [SeedVertex] + candidate_set
-
-            group_mappings = {} 
             current_group = [SeedVertex] + candidate_set
+            
+            # Temporarily register the group mapping (will be finalized if successful)
+            for v in current_group:
+                EquivalenceClassDict[v] = current_group
 
-            for j in range(1, len(current_group)):
-                uj = current_group[j]
+            print("---------------------")
+            print("Seed Vertex: ", SeedVertex)
+            print("Processing group ", current_group)
+
+            # --- RESTART MECHANISM START ---
+            group_stable = False
+            while not group_stable:
+                group_stable = True  # Assume success, set to False if we need to restart
+                group_mappings = {} 
                 
-                changes, mapping, primary_touched = self.anonymize_pair(G_anon, SeedVertex, uj, EquivalenceClassDict)
-                group_mappings[uj] = mapping
+                # We collect broken groups here, but apply them only if the group stabilizes
+                pending_broken_groups = [] 
+
+                for j in range(1, len(current_group)):
+                    uj = current_group[j]
+                    processed_members = set(current_group[1:j]) # Members processed in previous iterations
+
+                    print(f"Processing pair {SeedVertex}-{uj}")
+                    
+                    # 1. Anonymize Pair
+                    changes, mapping, primary_touched = self.anonymize_pair(G_anon, SeedVertex, uj, EquivalenceClassDict)
+                    group_mappings[uj] = mapping
+
+                    # --- DETECTION LOGIC START ---
+                    # Check if 'primary_touched' contains any member we already processed (indices 1 to j-1).
+                    # If so, the isomorphism for those members is potentially broken because 
+                    # an edge was added to them outside of the sync process.
+                    intra_group_conflict = primary_touched.intersection(processed_members)
+                    
+                    if intra_group_conflict:
+                        print(f"!!! CONFLICT DETECTED: Node(s) {intra_group_conflict} within current group modified.")
+                        print("!!! Restarting group processing...")
+                        group_stable = False
+                        break # Break the 'for j' loop, 'while' loop will restart
+                    # --- DETECTION LOGIC END ---
+
+                    # 2. Sync changes to previous members
+                    secondary_touched = set()
+                    if j > 1:
+                        print(f"Synching changes to {current_group[1:j]}")
+                        secondary_touched = self.sync_group_changes(G_anon, current_group[1:j], SeedVertex, changes, group_mappings)
+                        # Note: sync_group_changes explicitly handles keeping 1..j-1 consistent, so 
+                        # we don't usually check secondary_touched for intra-group conflict here.
+
+                    # 3. Collect external broken groups (Ripple Effect)
+                    all_touched_nodes = primary_touched.union(secondary_touched)
+                    
+                    for node in all_touched_nodes:
+                        # If we touched a node OUTSIDE current group that was already anonymized
+                        if node not in current_group:
+                            if G_anon.nodes[node].get('anonymized') == True:
+                                broken_group = EquivalenceClassDict.get(node, [node])
+                                if broken_group not in pending_broken_groups:
+                                    pending_broken_groups.append(broken_group)
+
+                # End of 'for j' loop.
+                # If group_stable is still True, we finished the group successfully.
                 
-                secondary_touched = set()
-                if j > 1:
-                    secondary_touched = self.sync_group_changes(G_anon, current_group[1:j], SeedVertex, changes, group_mappings)
-
-                all_touched_nodes = primary_touched.union(secondary_touched)
-
-                broken_groups = []
-                for node in all_touched_nodes:
-                    if node not in current_group:
-                        if G_anon.nodes[node].get('anonymized') == True:
-                            broken_group = EquivalenceClassDict.get(node, [node])
-                            if broken_group not in broken_groups:
-                                broken_groups.append(broken_group)
-                            for member in broken_group:
+                if group_stable:
+                    # Apply the external broken groups logic now that we are sure this group is done
+                    all_broken_members = set()
+                    for bg in pending_broken_groups:
+                        for member in bg:
+                            if member not in all_broken_members:
+                                all_broken_members.add(member)
                                 G_anon.nodes[member]['anonymized'] = False
+                                EquivalenceClassDict.pop(member, None) # Remove mapping
                                 if member not in VertexList:
                                     VertexList.append(member)
+            # --- RESTART MECHANISM END ---
 
-            for broken_group in broken_groups:
-                for member in broken_group:
-                    EquivalenceClassDict.pop(member, None)
-            
-            # Finalize group
+            # Finalize current group
             for node in current_group:
                 G_anon.nodes[node]['anonymized'] = True
                 if node in VertexList:
                     VertexList.remove(node)
 
+            # Re-sort VertexList as degrees might have changed
             VertexList.sort(key=lambda v: self.neighborhood_size_key(G_anon, v), reverse=True)
 
         return G_anon, EquivalenceClassDict
