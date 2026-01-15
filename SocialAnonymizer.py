@@ -498,6 +498,10 @@ class SocialAnonymizer:
             raise ValueError(
                 f"impossible anonymization: k={k} exceeds number of nodes ({G.number_of_nodes()}).")
         
+        self.alpha = alpha
+        self.beta = beta
+        self.gama = gamma
+        
         G_anon = G.copy()
         VertexList = sorted(G_anon.nodes, key=lambda v: self.neighborhood_size_key(G_anon, v), reverse=True)
 
