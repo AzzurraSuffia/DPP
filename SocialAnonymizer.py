@@ -494,6 +494,10 @@ class SocialAnonymizer:
         """
         Main method: Anonymize the graph to satisfy k-anonymity.
         """
+        if k > G.number_of_nodes():
+            raise ValueError(
+                f"impossible anonymization: k={k} exceeds number of nodes ({G.number_of_nodes()}).")
+        
         G_anon = G.copy()
         VertexList = sorted(G_anon.nodes, key=lambda v: self.neighborhood_size_key(G_anon, v), reverse=True)
 
