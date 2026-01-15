@@ -1,6 +1,7 @@
 import networkx as nx
 from networkx.algorithms import isomorphism
 from functools import cmp_to_key
+from exceptions import AnonymizationImpossibleError
 
 class SocialAnonymizer:
     def __init__(self):
@@ -128,12 +129,19 @@ class SocialAnonymizer:
     @staticmethod
     def find_missing_matching_vertex(G: nx.Graph, s: int, anonymized: dict, constraints: list) -> int:
         """Find a suitable matching vertex that satisfies constraints."""
+        # Nodes that are NOT in constraints and NOT currently anonymized
         unanon_nodes = sorted(n for n, v in anonymized.items() if not v and n not in constraints)
 
         if unanon_nodes:
             search_space = unanon_nodes
         else:
+            # Fallback: Nodes not in constraints (even if anonymized, though this triggers rollback)
             search_space = sorted(n for n in G.nodes() if n not in constraints)
+
+        if not search_space:
+            # Explicitly raise error if no nodes are left
+            raise AnonymizationImpossibleError(
+                f"Cannot add neighbor to node. Graph saturated or constraints too strict.")
 
         deg_dict = {n: G.degree(n) for n in search_space}
         min_deg = min(deg_dict.values())
@@ -392,9 +400,47 @@ class SocialAnonymizer:
 
         return unmatched_components, perfect_mapping
 
+    def _force_merge_components(self, G, node_u, component_dict, orphan_cid=None):
+        """
+        Helper to merge an orphan component into the main body of the neighborhood.
+        Adds an edge between the orphan component and another component.
+        """
+        # Get all component IDs
+        all_cids = list(component_dict.keys())
+        
+        if len(all_cids) < 2:
+            raise Exception("No components to merge, only one component")
+
+        # Identify which components to merge
+        # If orphan_cid is provided, merge it with the first available other component
+        cid_1 = orphan_cid if orphan_cid is not None else all_cids[0]
+        
+        # Find a cid_2 that is not cid_1
+        cid_2 = None
+        for c in all_cids:
+            if c != cid_1:
+                cid_2 = c
+                break
+        
+        if cid_2 is None: return 
+
+        # Pick one node from each component
+        # We sort by degree to pick "hub" nodes (better utility usually)
+        nodes_1 = sorted(component_dict[cid_1].nodes(), key=lambda n: G.degree(n), reverse=True)
+        nodes_2 = sorted(component_dict[cid_2].nodes(), key=lambda n: G.degree(n), reverse=True)
+        
+        u1 = nodes_1[0]
+        u2 = nodes_2[0]
+        
+        # Add the edge -> This merges the two components
+        if not G.has_edge(u1, u2):
+            G.add_edge(u1, u2)
+            # We don't need to record 'changes' here because the restart 
+            # will catch the new topology in the snapshot comparison.
+
     def anonymize_pair(self, G: nx.Graph, u: int, v: int, EquivalenceClassDict: dict) -> tuple[list, dict, set]:
         """Anonymize a pair of nodes by making their neighborhoods isomorphic."""
-        mapping = {u: v}
+        mapping = {}
         changes = []
         touched_nodes = set()
 
@@ -404,61 +450,88 @@ class SocialAnonymizer:
         original_v_nodes = set(G.neighbors(v)).copy()
         original_v_edges = set(G.subgraph(list(original_v_nodes) + [v]).edges()).copy()
 
-        # Get neighborhood components
-        component_graphs, unmatched_components = self.get_neighborhood_components(G, u, v)
+        neighborhood_stable = False
+        
+        while not neighborhood_stable:
+            neighborhood_stable = True 
+            mapping = {u: v}
 
-        # Perfect Matches
-        unmatched_components, perfect_mapping = self.find_perfect_comp_matches(u, v, component_graphs, unmatched_components)
-        mapping.update(perfect_mapping)
+            # Get neighborhood components
+            component_graphs, unmatched_components = self.get_neighborhood_components(G, u, v)
 
-        while unmatched_components[u] and unmatched_components[v]:
-            largest_u_id = max(unmatched_components[u], key=lambda cid: len(component_graphs[u][cid]))
-            largest_v_id = max(unmatched_components[v], key=lambda cid: len(component_graphs[v][cid]))
-            
-            largest_u_component = component_graphs[u][largest_u_id]
-            largest_v_component = component_graphs[v][largest_v_id]
+            print(f"Components of node {u}", [value.nodes() for key, value in component_graphs[u].items()])
+            print(f"Components of node {v}", [value.nodes() for key, value in component_graphs[v].items()])
+            # Perfect Matches
+            unmatched_components, perfect_mapping = self.find_perfect_comp_matches(u, v, component_graphs, unmatched_components)
+            mapping.update(perfect_mapping)
 
-            if len(largest_u_component) >= len(largest_v_component):
-                target, source = u, v
-                target_cid, source_cid = largest_u_id, largest_v_id
+            while unmatched_components[u] and unmatched_components[v]:
+                largest_u_id = max(unmatched_components[u], key=lambda cid: len(component_graphs[u][cid]))
+                largest_v_id = max(unmatched_components[v], key=lambda cid: len(component_graphs[v][cid]))
+                
+                largest_u_component = component_graphs[u][largest_u_id]
+                largest_v_component = component_graphs[v][largest_v_id]
+
+                if len(largest_u_component) >= len(largest_v_component):
+                    target, source = u, v
+                    target_cid, source_cid = largest_u_id, largest_v_id
+                else:
+                    target, source = v, u
+                    target_cid, source_cid = largest_v_id, largest_u_id
+
+                try:
+                    most_sim_id, target_anon_g, source_anon_g, local_mapping = self.most_similar_component(
+                        G, target_cid, component_graphs, unmatched_components[source],
+                        ref_node=target, src_node=source, EquivalenceClassDict=EquivalenceClassDict
+                    )
+
+                    if source == v:
+                        mapping.update(local_mapping)
+                    else:
+                        for target_node, source_node in local_mapping.items():
+                            mapping[source_node] = target_node
+
+                    self.update_graph(G, target_anon_g, source_anon_g, target, source)
+
+                    unmatched_components[target].remove(target_cid)
+                    unmatched_components[source].remove(most_sim_id)
+
+                except AnonymizationImpossibleError:
+                    self._force_merge_components(G, source, component_graphs[source])
+                    neighborhood_stable = False
+                    break
+
+            if not neighborhood_stable: continue 
+
+            # Orphaned Components
+            if unmatched_components[u]:
+                target, source, extras = u, v, unmatched_components[u].copy()
             else:
-                target, source = v, u
-                target_cid, source_cid = largest_v_id, largest_u_id
+                target, source, extras = v, u, unmatched_components[v].copy()
 
-            most_sim_id, target_anon_g, source_anon_g, local_mapping = self.most_similar_component(
-                G, target_cid, component_graphs, unmatched_components[source],
-                ref_node=target, src_node=source, EquivalenceClassDict=EquivalenceClassDict
-            )
-            
-            if source == v:
-                mapping.update(local_mapping)
-            else:
-                for target_node, source_node in local_mapping.items():
-                    mapping[source_node] = target_node
+            for cid in extras:
+                extra_comp = component_graphs[target][cid]
 
-            self.update_graph(G, target_anon_g, source_anon_g, target, source)
+                try:
+                    # Try to create the component in 'source'
+                    target_anon_g, source_anon_g, local_mapping = self.build_component(
+                        G, extra_comp, target, source, EquivalenceClassDict)
 
-            unmatched_components[target].remove(target_cid)
-            unmatched_components[source].remove(most_sim_id)
+                except AnonymizationImpossibleError:
+                    # --- SOLUTION IMPLEMENTATION ---
+                    print(f"DEBUG: Cannot create new component in {source}. Merging components in {target} instead.")
+                    self._force_merge_components(G, target, component_graphs[target], cid)
+                    neighborhood_stable = False
+                    break
+                    
+                if source == v:
+                    mapping.update(local_mapping)
+                else:
+                    for target_node, source_node in local_mapping.items():
+                        mapping[source_node] = target_node
 
-        # Orphaned Components
-        if unmatched_components[u]:
-            target, source, extras = u, v, unmatched_components[u].copy()
-        else:
-            target, source, extras = v, u, unmatched_components[v].copy()
-
-        for cid in extras:
-            extra_comp = component_graphs[target][cid]
-            target_anon_g, source_anon_g, local_mapping = self.build_component(
-                G, extra_comp, target, source, EquivalenceClassDict)
-            if source == v:
-                mapping.update(local_mapping)
-            else:
-                for target_node, source_node in local_mapping.items():
-                    mapping[source_node] = target_node
-
-            self.update_graph(G, target_anon_g, source_anon_g, target, source)
-            unmatched_components[target].remove(cid)
+                self.update_graph(G, target_anon_g, source_anon_g, target, source)
+                unmatched_components[target].remove(cid)
 
         # Calculate Changes & Touched Nodes
         current_u_nodes = set(G.neighbors(u))
