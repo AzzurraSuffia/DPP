@@ -1,11 +1,9 @@
 import networkx as nx
 from networkx.algorithms import isomorphism
 from functools import cmp_to_key
-from MDFScoder import MDFSCoder
-from utils import plot_component
 
 class SocialAnonymizer:
-    def __init__(self, alpha: float, beta: float, gamma: float):
+    def __init__(self):
         """
         Initialize the SocialAnonymizer with cost parameters.
         
@@ -14,10 +12,9 @@ class SocialAnonymizer:
             beta: Edge cost multiplier
             gamma: Vertex cost multiplier
         """
-        self.coder = MDFSCoder()
-        self.alpha = alpha
-        self.beta = beta
-        self.gamma = gamma
+        self.alpha = 0 # default
+        self.beta = 1 # default
+        self.gamma = 1 # default
     
     @staticmethod
     def bfs_order(subgraph: nx.Graph, start: int) -> list:
@@ -493,7 +490,7 @@ class SocialAnonymizer:
 
         return changes, mapping, touched_nodes
 
-    def anonymize_graph(self, G: nx.Graph, k: int) -> tuple[nx.Graph, dict]:
+    def anonymize_graph(self, G: nx.Graph, k: int, alpha: float, beta: float, gamma: float) -> tuple[nx.Graph, dict]:
         """
         Main method: Anonymize the graph to satisfy k-anonymity.
         """
