@@ -85,7 +85,7 @@ def random_non_iso_pair(n, p, seeds):
     else:
         return None
 
-def positive_benchmark(ns, p, seeds, trials=50):
+def positive_benchmark(ns, p, seeds):
     results_MDFS = []
     results_vf2 = []
     coder = MDFSCoder()
@@ -95,26 +95,25 @@ def positive_benchmark(ns, p, seeds, trials=50):
         times_vf2 = []
 
         for seed in seeds:
-            for _ in range(trials):  # remove randomness of a single execution
             
-                G, H = random_iso_pair(n, p, seed)
+            G, H = random_iso_pair(n, p, seed)
 
-                start_time = time.perf_counter() # more refined resolution than time.time()
-                coder.is_isomoprhic(G, H)
-                end_time = time.perf_counter()
-                times_MDFS.append(end_time - start_time)
+            start_time = time.perf_counter() # more refined resolution than time.time()
+            coder.is_isomoprhic(G, H)
+            end_time = time.perf_counter()
+            times_MDFS.append(end_time - start_time)
 
-                start_time = time.perf_counter()
-                nx.is_isomorphic(G, H) #GraphMatcher inside
-                end_time = time.perf_counter()
-                times_vf2.append(end_time - start_time)
+            start_time = time.perf_counter()
+            nx.is_isomorphic(G, H) #GraphMatcher inside
+            end_time = time.perf_counter()
+            times_vf2.append(end_time - start_time)
 
         results_MDFS.append(np.mean(times_MDFS))
         results_vf2.append(np.mean(times_vf2))
 
     return results_MDFS, results_vf2
 
-def negative_benchmark(ns, p, seeds, trials=50):
+def negative_benchmark(ns, p, seeds):
     results_MDFS = []
     results_vf2 = []
     coder = MDFSCoder()
@@ -124,19 +123,18 @@ def negative_benchmark(ns, p, seeds, trials=50):
         times_vf2 = []
 
         for pair_seeds in seeds:
-            for _ in range(trials):  # remove randomness of a single execution
             
-                G, H = random_non_iso_pair(n, p, pair_seeds)
+            G, H = random_non_iso_pair(n, p, pair_seeds)
 
-                start_time = time.perf_counter()
-                coder.is_isomoprhic(G, H)
-                end_time = time.perf_counter()
-                times_MDFS.append(end_time - start_time)
+            start_time = time.perf_counter()
+            coder.is_isomoprhic(G, H)
+            end_time = time.perf_counter()
+            times_MDFS.append(end_time - start_time)
 
-                start_time = time.perf_counter()
-                nx.is_isomorphic(G, H) #GraphMatcher inside
-                end_time = time.perf_counter()
-                times_vf2.append(end_time - start_time)
+            start_time = time.perf_counter()
+            nx.is_isomorphic(G, H) #GraphMatcher inside
+            end_time = time.perf_counter()
+            times_vf2.append(end_time - start_time)
 
         results_MDFS.append(np.mean(times_MDFS))
         results_vf2.append(np.mean(times_vf2))
