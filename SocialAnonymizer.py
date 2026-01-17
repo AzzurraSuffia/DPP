@@ -497,12 +497,13 @@ class SocialAnonymizer:
                     unmatched_components[source].remove(most_sim_id)
 
                 except AnonymizationImpossibleError:
+                    print(f"DEBUG: Cannot extend component in {source} to match component in {target}. Merging components in {target} instead.")
                     self._force_merge_components(G, source, component_graphs[source])
                     neighborhood_stable = False
                     break
 
-            if not neighborhood_stable: continue 
-
+            if not neighborhood_stable: continue
+            
             # Orphaned Components
             if unmatched_components[u]:
                 target, source, extras = u, v, unmatched_components[u].copy()
@@ -684,3 +685,11 @@ class SocialAnonymizer:
             VertexList.sort(key=lambda v: self.neighborhood_size_key(G_anon, v), reverse=True)
 
         return G_anon, EquivalenceClassDict
+    
+social_anonymizer = SocialAnonymizer()
+G_ba = nx.barabasi_albert_graph(n=20, m=1, seed=19)
+try:
+    G_anon, eq_dict = social_anonymizer.anonymize_graph(G_ba, k=2, alpha=0, beta=1, gamma=1)
+
+except Exception as e:
+    pass
