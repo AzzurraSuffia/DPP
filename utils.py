@@ -1,72 +1,11 @@
 import networkx as nx
 import matplotlib.pyplot as plt
 from networkx.algorithms import isomorphism
-
-def compare_components(comp1, comp2):
-    """
-    Compares two neighborhood components C1 and C2 based on the paper's rules:
-    1. |V(C1)| < |V(C2)|
-    2. |E(C1)| < |E(C2)|
-    3. DFS(C1) < DFS(C2) (using M-DFS edge comparison rules)
-    
-    Input: comp = (num_nodes, num_edges, dfs_code)
-    Output: -1 if c1 < c2, 1 if c1 > c2, 0 if equal
-    """
-    v1, e1, code1 = comp1
-    v2, e2, code2 = comp2
-    
-    # Priority 1: Number of Vertices
-    if v1 < v2: return -1
-    if v1 > v2: return 1
-    
-    # Priority 2: Number of Edges
-    if e1 < e2: return -1
-    if e1 > e2: return 1
-    
-    # Priority 3: DFS Code Lexicographical Comparison
-    # We must compare code1 and code2 edge-by-edge using the paper's rules
-    min_len = min(len(code1), len(code2))
-    for k in range(min_len):
-        edge_res = compare_edges_paper(code1[k], code2[k])
-        if edge_res != 0:
-            return edge_res
-            
-    # If one is a prefix of the other (shouldn't happen if |E| is equal, but for safety)
-    if len(code1) < len(code2): return -1
-    if len(code1) > len(code2): return 1
-    
-    return 0
-
-def compare_edges_paper(e1, e2):
-    """
-    Compares two edges based on the 4 Rules.
-    This logic must match exactly what is inside your MDFSCoder.
-    """
-    u1, v1 = e1
-    u2, v2 = e2
-    fw1 = u1 < v1
-    fw2 = u2 < v2
-
-    # Rule 1: Backward < Forward
-    if not fw1 and fw2: return -1
-    if fw1 and not fw2: return 1
-
-    # Rule 2: Both Backward
-    if not fw1 and not fw2:
-        if u1 < u2: return -1
-        if u1 > u2: return 1
-        if v1 < v2: return -1
-        if v1 > v2: return 1
-        return 0
-
-    # Rule 3: Both Forward
-    if fw1 and fw2:
-        if u1 > u2: return -1 # Deeper source is smaller
-        if u1 < u2: return 1
-        if v1 < v2: return -1
-        if v1 > v2: return 1
-        return 0
-    return 0
+from MDFScoder import MDFSCoder
+from tqdm import tqdm
+import time
+import numpy as np
+import random
 
 def plot_component(comp, title="Component"):
     pos = nx.spring_layout(comp, seed=42)  # deterministic layout
@@ -127,3 +66,79 @@ def check_isomorphic_classes(G: nx.Graph, EquivalenceClassDict: dict) -> list:
                 break 
     
     return violating_groups
+
+def random_iso_pair(n, p, seed):
+    G = nx.erdos_renyi_graph(n, p, seed=seed)
+    nodes = list(G.nodes())
+    perm = dict(zip(nodes, random.sample(nodes, len(nodes))))
+    H = nx.relabel_nodes(G, perm)
+    return G, H
+
+def random_non_iso_pair(n, p, seeds):
+    if seeds[0] == seeds[1]:
+        raise ValueError("Seeds should be different")
+    G = nx.erdos_renyi_graph(n, p, seeds[0])
+    H = nx.erdos_renyi_graph(n, p, seeds[1])
+
+    if not nx.is_isomorphic(G, H):
+        return G, H
+    else:
+        return None
+
+def positive_benchmark(ns, p, seeds, trials=50):
+    results_MDFS = []
+    results_vf2 = []
+    coder = MDFSCoder()
+
+    for n in tqdm(ns, desc="Graph size"):
+        times_MDFS = []
+        times_vf2 = []
+
+        for seed in seeds:
+            for _ in range(trials):  # remove randomness of a single execution
+            
+                G, H = random_iso_pair(n, p, seed)
+
+                start_time = time.perf_counter() # more refined resolution than time.time()
+                coder.is_isomoprhic(G, H)
+                end_time = time.perf_counter()
+                times_MDFS.append(end_time - start_time)
+
+                start_time = time.perf_counter()
+                nx.is_isomorphic(G, H) #GraphMatcher inside
+                end_time = time.perf_counter()
+                times_vf2.append(end_time - start_time)
+
+        results_MDFS.append(np.mean(times_MDFS))
+        results_vf2.append(np.mean(times_vf2))
+
+    return results_MDFS, results_vf2
+
+def negative_benchmark(ns, p, seeds, trials=50):
+    results_MDFS = []
+    results_vf2 = []
+    coder = MDFSCoder()
+
+    for n in tqdm(ns, desc="Graph size"):
+        times_MDFS = []
+        times_vf2 = []
+
+        for pair_seeds in seeds:
+            for _ in range(trials):  # remove randomness of a single execution
+            
+                G, H = random_non_iso_pair(n, p, pair_seeds)
+
+                start_time = time.perf_counter()
+                coder.is_isomoprhic(G, H)
+                end_time = time.perf_counter()
+                times_MDFS.append(end_time - start_time)
+
+                start_time = time.perf_counter()
+                nx.is_isomorphic(G, H) #GraphMatcher inside
+                end_time = time.perf_counter()
+                times_vf2.append(end_time - start_time)
+
+        results_MDFS.append(np.mean(times_MDFS))
+        results_vf2.append(np.mean(times_vf2))
+
+    return results_MDFS, results_vf2
