@@ -1,4 +1,5 @@
 from functools import cmp_to_key
+import networkx as nx
 
 # note: if you introduce back labels, you should define a code also for isolated nodes
 
@@ -6,7 +7,7 @@ class MDFSCoder:
     def __init__(self):
         self.best_code = None
 
-    def get_code(self, G):
+    def get_code(self, G: nx.Graph):
         if G.number_of_nodes() == 0: return []
         self.best_code = None
         
@@ -22,6 +23,15 @@ class MDFSCoder:
             self._dfs_search(G, mapping, current_code, used_edges)
             
         return self.best_code
+    
+    def is_isomoprhic(self, G: nx.Graph, H: nx.Graph)-> bool:
+        code1 = self.get_code(G)
+        code2 = self.get_code(H)
+
+        if code1 == code2: 
+            return True
+        else:
+            return False
 
     def _dfs_search(self, G, mapping, current_code, used_edges):
         # --- 1. PRUNING ---
@@ -106,24 +116,42 @@ class MDFSCoder:
         return 0
 
     def _compare_edges(self, e1, e2):
-        """Paper's 4 Rules"""
+        """
+        Compares two edges based on the paper's 4 Rules (Section III-A).
+        e = (u1, v1), e' = (u2, v2)
+        """
         u1, v1 = e1
         u2, v2 = e2
+        
+        # Determine direction: Forward if u < v, Backward if u > v
+        # (Assuming DFS numbering where parents have lower IDs than children)
         fw1 = u1 < v1
         fw2 = u2 < v2
-        
-        if not fw1 and fw2: return -1
-        if fw1 and not fw2: return 1
-        if not fw1 and not fw2: # Both Back
+
+        # Rule 1
+        if fw1 and fw2:
+            if v1 < v2: return -1
+            if v1 > v2: return 1
+            if u1 > u2: return -1 
+            if u1 < u2: return 1
+            return 0
+
+        # Rule 2
+        if not fw1 and not fw2: 
             if u1 < u2: return -1
             if u1 > u2: return 1
             if v1 < v2: return -1
             if v1 > v2: return 1
             return 0
-        if fw1 and fw2: # Both Fwd
-            if u1 > u2: return -1
-            if u1 < u2: return 1
-            if v1 < v2: return -1
-            if v1 > v2: return 1
-            return 0
+        
+        # Rule 3
+        if fw1 and not fw2:
+            if v1 <= u2: return -1
+            return 1
+        
+        # Rule 4
+        if not fw1 and fw2:
+            if u1 < v2: return -1
+            return 1
+
         return 0

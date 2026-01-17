@@ -685,11 +685,3 @@ class SocialAnonymizer:
             VertexList.sort(key=lambda v: self.neighborhood_size_key(G_anon, v), reverse=True)
 
         return G_anon, EquivalenceClassDict
-    
-social_anonymizer = SocialAnonymizer()
-G_ba = nx.barabasi_albert_graph(n=20, m=1, seed=19)
-try:
-    G_anon, eq_dict = social_anonymizer.anonymize_graph(G_ba, k=2, alpha=0, beta=1, gamma=1)
-
-except Exception as e:
-    pass
