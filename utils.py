@@ -1,11 +1,12 @@
 import networkx as nx
 import matplotlib.pyplot as plt
 from networkx.algorithms import isomorphism
-from MDFScoder import MDFSCoder
 from tqdm import tqdm
 import time
 import numpy as np
 import random
+from MDFScoder import MDFSCoder
+from LabelDomain import LabelDomain
 
 def plot_component(comp, title="Component"):
     pos = nx.spring_layout(comp, seed=42)  # deterministic layout
@@ -140,3 +141,40 @@ def negative_benchmark(ns, p, seeds):
         results_vf2.append(np.mean(times_vf2))
 
     return results_MDFS, results_vf2
+
+def calculate_global_loss(G_original: nx.Graph, G_anonymized: nx.Graph, label_domain: LabelDomain | None = None) -> float:
+
+        if G_original.number_of_nodes() != G_anonymized.number_of_nodes():
+                raise ValueError("Graph size mismatch: anonymized graph must preserve number of nodes.")
+
+        num_nodes = G_original.number_of_nodes()
+
+        # 1. Structural Loss (Edges added)
+        num_edges_orig = G_original.number_of_edges()
+        num_edges_anon = G_anonymized.number_of_edges()
+        
+        added_edges = num_edges_anon - num_edges_orig
+        max_edges = num_nodes * (num_nodes - 1) // 2
+        max_added_edges = max_edges - num_edges_orig
+
+        # 2. Label Loss (NCP)
+        total_ncp = 0.0
+        max_ncp = 0.0
+        
+        if label_domain is not None:
+                if not all('label' in d for _, d in G_original.nodes(data=True)):
+                        raise ValueError("Original graph has missing labels.")
+
+                if not all('label' in d for _, d in G_anonymized.nodes(data=True)):
+                        raise ValueError("Anonymized graph has missing labels.")
+
+                for node in G_original.nodes():
+                        generalized_label = G_anonymized.nodes[node]['label']
+                        total_ncp += label_domain.normalized_certainty_penalty(generalized_label)
+
+                max_ncp = num_nodes * label_domain.normalized_certainty_penalty(label_domain.root)
+
+        total_loss = added_edges + total_ncp
+        max_loss = max_added_edges + max_ncp
+
+        return total_loss / max_loss

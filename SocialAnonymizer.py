@@ -459,8 +459,8 @@ class SocialAnonymizer:
             # Get neighborhood components
             component_graphs, unmatched_components = self.get_neighborhood_components(G, u, v)
 
-            print(f"Components of node {u}", [value.nodes() for key, value in component_graphs[u].items()])
-            print(f"Components of node {v}", [value.nodes() for key, value in component_graphs[v].items()])
+            #print(f"Components of node {u}", [value.nodes() for key, value in component_graphs[u].items()])
+            #print(f"Components of node {v}", [value.nodes() for key, value in component_graphs[v].items()])
             # Perfect Matches
             unmatched_components, perfect_mapping = self.find_perfect_comp_matches(u, v, component_graphs, unmatched_components)
             mapping.update(perfect_mapping)
@@ -497,7 +497,7 @@ class SocialAnonymizer:
                     unmatched_components[source].remove(most_sim_id)
 
                 except AnonymizationImpossibleError:
-                    print(f"DEBUG: Cannot extend component in {source} to match component in {target}. Merging components in {target} instead.")
+                    #print(f"DEBUG: Cannot extend component in {source} to match component in {target}. Merging components in {target} instead.")
                     self._force_merge_components(G, source, component_graphs[source])
                     neighborhood_stable = False
                     break
@@ -520,7 +520,7 @@ class SocialAnonymizer:
 
                 except AnonymizationImpossibleError:
                     # --- SOLUTION IMPLEMENTATION ---
-                    print(f"DEBUG: Cannot create new component in {source}. Merging components in {target} instead.")
+                    #print(f"DEBUG: Cannot create new component in {source}. Merging components in {target} instead.")
                     self._force_merge_components(G, target, component_graphs[target], cid)
                     neighborhood_stable = False
                     break
@@ -604,9 +604,9 @@ class SocialAnonymizer:
             for v in current_group:
                 EquivalenceClassDict[v] = current_group
 
-            print("---------------------")
-            print("Seed Vertex: ", SeedVertex)
-            print("Processing group ", current_group)
+            #print("---------------------")
+            #print("Seed Vertex: ", SeedVertex)
+            #print("Processing group ", current_group)
 
             # --- RESTART MECHANISM START ---
             group_stable = False
@@ -621,7 +621,7 @@ class SocialAnonymizer:
                     uj = current_group[j]
                     processed_members = set(current_group[1:j]) # Members processed in previous iterations
 
-                    print(f"Processing pair {SeedVertex}-{uj}")
+                    #print(f"Processing pair {SeedVertex}-{uj}")
                     
                     # 1. Anonymize Pair
                     changes, mapping, primary_touched = self.anonymize_pair(G_anon, SeedVertex, uj, EquivalenceClassDict)
@@ -634,8 +634,8 @@ class SocialAnonymizer:
                     intra_group_conflict = primary_touched.intersection(processed_members)
                     
                     if intra_group_conflict:
-                        print(f"!!! CONFLICT DETECTED: Node(s) {intra_group_conflict} within current group modified.")
-                        print("!!! Restarting group processing...")
+                        #print(f"!!! CONFLICT DETECTED: Node(s) {intra_group_conflict} within current group modified.")
+                        #print("!!! Restarting group processing...")
                         group_stable = False
                         break # Break the 'for j' loop, 'while' loop will restart
                     # --- DETECTION LOGIC END ---
@@ -643,7 +643,7 @@ class SocialAnonymizer:
                     # 2. Sync changes to previous members
                     secondary_touched = set()
                     if j > 1:
-                        print(f"Synching changes to {current_group[1:j]}")
+                        #print(f"Synching changes to {current_group[1:j]}")
                         secondary_touched = self.sync_group_changes(G_anon, current_group[1:j], SeedVertex, changes, group_mappings)
                         # Note: sync_group_changes explicitly handles keeping 1..j-1 consistent, so 
                         # we don't usually check secondary_touched for intra-group conflict here.
