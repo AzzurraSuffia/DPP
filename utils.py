@@ -186,8 +186,8 @@ def generate_degree_anonymization_gif(
     social_anonymizer,
     k_values: list[int],
     output_dir: str,
-    gif_name: str = "evolution.gif",
-    duration_ms: int = 1000
+    gif_name: str = "degree_evolution.gif",
+    duration: int = 1000
 ):
 
     os.makedirs(output_dir, exist_ok=True)
@@ -249,5 +249,65 @@ def generate_degree_anonymization_gif(
 
     # Save GIF
     gif_path = os.path.join(output_dir, gif_name)
-    imageio.mimsave(gif_path, frames, duration=duration_ms)
+    imageio.mimsave(gif_path, frames, duration=duration)
+    print(f"GIF saved to {gif_path}")
+
+def generate_betweenness_anonymization_gif(
+    G_original: nx.Graph,
+    social_anonymizer,
+    k_values: list[int],
+    output_dir: str,
+    gif_name: str = "betweenness_evolution.gif",
+    duration: int = 1000
+):
+    
+    os.makedirs(output_dir, exist_ok=True)
+    frames = []
+    
+    for k in k_values:
+        # Anonymize the graph
+        G_anon, eq_classes = social_anonymizer.anonymize_graph(G_original, k=k, alpha=0, beta=1, gamma=1)
+        
+        # Optional: verify isomorphism
+        if len(check_isomorphic_classes(G_anon, eq_classes)) != 0:
+            raise Exception(f"Anonymization for k={k} failed isomorphism check.")
+        
+        # Compute betweenness centrality
+        bc = nx.betweenness_centrality(G_anon, normalized=True)
+        bc_values = [bc[node] for node in G_anon.nodes()]
+        
+        # Create figure
+        fig, ax = plt.subplots(figsize=(8, 6))
+        pos = nx.spring_layout(G_anon, seed=42)
+        
+        labels = {node: str(node) for node in G_anon.nodes()}
+
+        # Draw nodes with BC coloring
+        nx.draw_networkx_nodes(
+            G_anon, pos, node_color=bc_values, cmap=plt.cm.viridis,
+            node_size=300, ax=ax, vmin=0, vmax=1)
+        nx.draw_networkx_edges(G_anon, pos, ax=ax, alpha=0.6)
+        nx.draw_networkx_labels(G_anon, pos, labels=labels, font_color='white', ax=ax) #font_weight='bold',
+        
+        ax.set_title(f"k={k}", fontsize=14)
+        ax.axis("off")
+        
+        # colorbar with fixed range
+        sm = plt.cm.ScalarMappable(cmap=plt.cm.viridis, norm=plt.Normalize(vmin=0, vmax=1))
+        sm.set_array([])
+        cbar = fig.colorbar(sm, ax=ax, shrink=0.7)
+        cbar.set_label("Betweenness Centrality")
+        
+        plt.tight_layout()
+        
+        # Save frame
+        frame_path = os.path.join(output_dir, f"frame_k_{k}.png")
+        plt.savefig(frame_path, dpi=150)
+        plt.close(fig)
+        
+        frames.append(imageio.imread(frame_path))
+    
+    # Save GIF
+    gif_path = os.path.join(output_dir, gif_name)
+    imageio.mimsave(gif_path, frames, duration=duration)
     print(f"GIF saved to {gif_path}")
