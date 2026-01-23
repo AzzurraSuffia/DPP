@@ -6,7 +6,7 @@
 
 ## Assumptions
 1. Label generalization is omitted in the anonymization strategy to simplify the logic.
-2. In `anonymize_graph`, candidate selection uses a heuristic based on neighborhood size for speed instead of computing the full anonymization cost between two vertices.
+2. In `anonymize_graph`, candidate selection uses a heuristic based on degree for speed instead of computing the full anonymization cost between two vertices.
 
 ## File Structure
 
