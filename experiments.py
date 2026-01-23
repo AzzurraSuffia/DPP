@@ -29,9 +29,9 @@ def random_non_iso_pair(n, p, seeds):
     if not nx.is_isomorphic(G, H):
         return G, H
     else:
-        return None
+        return None, None
 
-def positive_benchmark(sizes, p, trials=5, rng_seed=None):
+def positive_benchmark(sizes, p, trials=5, num_repetition=5, rng_seed=None):
     """
     Benchmark the performance of MDFSCoder and NetworkX VF2 on pairs of isomorphic graphs.
     """
@@ -47,21 +47,22 @@ def positive_benchmark(sizes, p, trials=5, rng_seed=None):
         for _ in range(trials):
             seed = rng.randint(0, 100000)
             G, H = random_iso_pair(size, p, seed)
+            
+            for _ in range(num_repetition):
+                start_time = time.perf_counter() # more refined resolution than time.time()
+                coder.is_isomoprhic(G, H)
+                times_MDFS.append(time.perf_counter() - start_time)
 
-            start_time = time.perf_counter() # more refined resolution than time.time()
-            coder.is_isomoprhic(G, H)
-            times_MDFS.append(time.perf_counter() - start_time)
-
-            start_time = time.perf_counter()
-            nx.is_isomorphic(G, H) # GraphMatcher called inside
-            times_vf2.append(time.perf_counter() - start_time)
+                start_time = time.perf_counter()
+                nx.is_isomorphic(G, H) # GraphMatcher called inside
+                times_vf2.append(time.perf_counter() - start_time)
 
         results_MDFS.append(np.mean(times_MDFS))
         results_vf2.append(np.mean(times_vf2))
 
     return results_MDFS, results_vf2
     
-def negative_benchmark(sizes, p, trials=5, rng_seed=None):
+def negative_benchmark(sizes, p, trials=5, num_repetition=5, rng_seed=None):
     """
     Benchmark the performance of MDFSCoder and NetworkX VF2 on pairs of non-isomorphic graphs.
     """
@@ -82,15 +83,16 @@ def negative_benchmark(sizes, p, trials=5, rng_seed=None):
         for pair_seeds in pair_seeds_list:
             G, H = random_non_iso_pair(size, p, pair_seeds)
 
-            start_time = time.perf_counter()
-            coder.is_isomoprhic(G, H)
-            end_time = time.perf_counter()
-            times_MDFS.append(end_time - start_time)
+            for _ in range(num_repetition):
+                start_time = time.perf_counter()
+                coder.is_isomoprhic(G, H)
+                end_time = time.perf_counter()
+                times_MDFS.append(end_time - start_time)
 
-            start_time = time.perf_counter()
-            nx.is_isomorphic(G, H)
-            end_time = time.perf_counter()
-            times_vf2.append(end_time - start_time)
+                start_time = time.perf_counter()
+                nx.is_isomorphic(G, H)
+                end_time = time.perf_counter()
+                times_vf2.append(end_time - start_time)
 
         results_MDFS.append(np.mean(times_MDFS) if times_MDFS else 0)
         results_vf2.append(np.mean(times_vf2) if times_vf2 else 0)

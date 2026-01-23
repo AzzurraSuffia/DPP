@@ -339,11 +339,26 @@ class SocialAnonymizer:
 
         return comp1_anon, comp2_anon, node_map_1_2
 
-#TODO: END HERE
-
     def _most_similar_component(self, G: nx.Graph, ref_comp_id: int, component_graphs: dict, unmatched_component_ids: set[int], 
                                ref_node: int, src_node: int, EquivalenceClassDict: dict) -> tuple[int, nx.Graph, nx.Graph, dict]:
-        """Find the most similar component based on anonymization cost."""
+        """
+        Find the most similar unmatched component to a reference component based on anonymization cost.
+        
+        Args:
+            G: The original graph containing all nodes.
+            ref_comp_id: Identifier of the reference component within component_graphs.
+            component_graphs: A dictionary mapping nodes to their component subgraphs.
+            unmatched_component_ids: Set of component identifiers that have not yet been matched.
+            ref_node: Node in the reference graph used to access the reference component.
+            src_node: Node in the source graph used to access unmatched components.
+            EquivalenceClassDict: Mapping from nodes to equivalence classes for anonymization purposes.
+
+        Returns:
+            most_similar_id: The identifier of the most similar unmatched component.
+            best_ref_anon: An anonymized copy of the reference component after matching.
+            best_unm_anon: An anonymized copy of the most similar unmatched component after matching.
+            best_mapping: Mapping from nodes in the reference component to nodes in the unmatched component
+        """
         best_cost = float('inf')
         most_similar_id = float('inf')
         best_ref_anon = None
@@ -354,14 +369,19 @@ class SocialAnonymizer:
         
         ref_comp = component_graphs[ref_node][ref_comp_id]
 
+        # for each unmatched component
         for unm_id in sorted_unmatched_ids:
+
             unm_comp = component_graphs[src_node][unm_id]
 
+            # simulate anonynimization with the reference component
             ref_anon, unm_anon, current_mapping = self._match_and_generalize_components(
                 G, ref_comp, unm_comp, ref_node, src_node, EquivalenceClassDict)
 
+            # compute the anonymization cost
             cost = self.anonymization_cost(ref_comp, unm_comp, ref_anon, unm_anon)
 
+            # select the component with minimum cost
             if cost < best_cost or (cost == best_cost and unm_id < most_similar_id):
                 best_cost = cost
                 best_ref_anon = ref_anon
@@ -373,21 +393,38 @@ class SocialAnonymizer:
 
     @staticmethod
     def _get_neighborhood_components(G: nx.Graph, u: int, v: int) -> tuple[dict, dict]:
-        """Extract neighborhood components for two nodes."""
+        """
+        Extract neighborhood components for two nodes.
+        
+        Args:
+            G: The graph containing the nodes.
+            u: The first node whose neighborhood components will be extracted.
+            v: The second node whose neighborhood components will be extracted.
+
+        Returns:
+            component_graphs: A dictionary mapping each node (u and v) to another 
+                            dictionary of subgraphs representing its neighborhood components.
+            unmatched_components: A dictionary mapping each node (u and v) to a set of component 
+                                identifiers that have not yet been matched.
+        """
         Nu = G.subgraph(sorted(G.neighbors(u)))
         Nv = G.subgraph(sorted(G.neighbors(v)))
 
+        # Get connected components in u and v neighborhoods
         Cu = [sorted(c) for c in nx.connected_components(Nu)]
         Cv = [sorted(c) for c in nx.connected_components(Nv)]
 
+        # Sort components by the first node (deterministic ordering)
         Cu.sort(key=lambda nodes: nodes[0] if nodes else float('inf'))
         Cv.sort(key=lambda nodes: nodes[0] if nodes else float('inf'))
 
+        # Create subgraphs for each component and organize in dictionaries
         component_graphs = {
             u: {i: Nu.subgraph(nodes) for i, nodes in enumerate(Cu)},
             v: {i: Nv.subgraph(nodes) for i, nodes in enumerate(Cv)}
         }
 
+        # Dictionary to track unmatched components during anonymization 
         unmatched_components = {
             u: set(component_graphs[u].keys()),
             v: set(component_graphs[v].keys())
@@ -398,6 +435,7 @@ class SocialAnonymizer:
     @staticmethod
     def _resolve_node(node_id: int, member_id: int, seed: int, group_mappings: dict) -> int:
         """Resolve a node ID using group mappings."""
+
         if node_id == seed:
             return member_id
         
@@ -408,14 +446,35 @@ class SocialAnonymizer:
         return node_id
 
     def _sync_group_changes(self, G: nx.Graph, current_group: list, seed: int, changes: list, group_mappings: dict) -> set:
-        """Synchronize changes across group members."""
+        """
+        Synchronize structural changes made for the seed node across all the already processed members of a group.
+
+        Args:
+            G: The graph being anonymized.
+            current_group: List of nodes that belong to the same equivalence group as the seed.
+            seed: The reference node in the group that has undergone changes.
+            changes: A list of changes applied to the seed. Each change is a dictionary describing
+                    the type ('add_node' or 'add_edge') and the nodes involved.
+            group_mappings: A dictionary that maps each group member to its node mapping relative
+                            to the seed node.
+
+        Returns:
+            A set of nodes that were modified during synchronization across the group.
+        """
+        # Track modified nodes during this synchronization
         touched_nodes_during_sync = set()
 
+        # Loop over all members of the group except the seed
         for member in current_group:
+            # skip the seed
             if member == seed: continue
+            # skip members without a mapping yet
             if member not in group_mappings: continue
 
+            # Apply all changes from the seed to the current member
             for change in changes:
+
+                # Handle node additions
                 if change['type'] == 'add_node':
                     seed_node_added = change['u']
                     
@@ -424,51 +483,80 @@ class SocialAnonymizer:
                     constraints = set(G.neighbors(member))
                     constraints.add(member)
                     
+                    # If the target node conflicts with constraints, find an alternative node
                     if target_node_for_member in constraints:
+
                         anonymized_status = {n: data.get('anonymized', False) for n, data in G.nodes(data=True)}
-                        
                         target_node_for_member = self._find_missing_matching_vertex(G, anonymized_status, constraints)
 
+                    # Update the group mapping to include this new node for the current member
                     group_mappings[member][seed_node_added] = target_node_for_member
                     
+                    # Add the edge between member and target node if it doesn't exist
                     if not G.has_edge(member, target_node_for_member):
                         G.add_edge(member, target_node_for_member)
                         
                     touched_nodes_during_sync.add(target_node_for_member)
 
+                # Handle edge addition
                 elif change['type'] == 'add_edge':
                     u_seed, v_seed = change['u'], change['v']
                     
+                    # Resolve the nodes for the current member using the group mapping
                     u_mem = self._resolve_node(u_seed, member, seed, group_mappings)
                     v_mem = self._resolve_node(v_seed, member, seed, group_mappings)
                     
+                    # Add the edges if it didn't exist
                     if u_mem != v_mem and not G.has_edge(u_mem, v_mem):
-                        if G.has_edge(u_seed, v_seed):
-                            attr = G.edges[u_seed, v_seed]
-                            G.add_edge(u_mem, v_mem, **attr)
-                        else:
-                            G.add_edge(u_mem, v_mem)
+                        G.add_edge(u_mem, v_mem)
                     
                         touched_nodes_during_sync.add(u_mem)
                         touched_nodes_during_sync.add(v_mem)
-                    
+        
+        # Report modified nodes
         return touched_nodes_during_sync
 
     @staticmethod
     def _update_graph(G: nx.Graph, c_u_anon: nx.Graph, c_v_anon: nx.Graph, u: int, v: int):
-        """Update the graph with anonymized components."""
+        """
+        Update the graph by inserting two anonymized components and reconnecting them
+        to their respective center nodes.
+
+        Args:
+            G: The graph being updated.
+            c_u_anon: The anonymized component associated with node u.
+            c_v_anon: The anonymized component associated with node v.
+            u: The center node to which the first anonymized component is attached.
+            v: The center node to which the second anonymized component is attached.
+        """
+        # update G with edges added when anonymizing a given component of node u
         G.add_nodes_from(c_u_anon.nodes(data=True))
         G.add_edges_from(c_u_anon.edges(data=True))
         for node in c_u_anon:
             G.add_edge(u, node)
 
+        # update G with edges added when anonymizing a given component of node v
         G.add_nodes_from(c_v_anon.nodes(data=True))
         G.add_edges_from(c_v_anon.edges(data=True))
         for node in c_v_anon:
             G.add_edge(v, node)
 
     def _find_perfect_comp_matches(self, u: int, v: int, component_graphs: dict, unmatched_components: dict) -> tuple[dict, dict]:
-        """Find perfectly matching isomorphic components."""
+        """
+        Identify and match perfectly isomorphic neighborhood components of two nodes.
+
+        Args:
+            u: The first center node whose components are being considered.
+            v: The second center node whose components are being considered.
+            component_graphs: Mapping from each center node to its indexed component subgraphs.
+            unmatched_components: Mapping that tracks which component indices are still unmatched
+                for each center node.
+
+        Returns:
+            A tuple containing:
+            - The updated unmatched components after removing perfectly matched pairs.
+            - A mapping between nodes of perfectly matched components.
+        """
 
         perfect_mapping = {}
         matches_found = []
@@ -476,21 +564,24 @@ class SocialAnonymizer:
         # Keep track of already matched components in v
         matched_v = set()
 
-        for cu_id in list(unmatched_components[u]):  # iterate safely
+        for cu_id in list(unmatched_components[u]):
             c_u = component_graphs[u][cu_id]
 
             for cv_id in list(unmatched_components[v]):
+                # skip already paired component
                 if cv_id in matched_v:
-                    continue  # skip already paired component
+                    continue  
 
                 c_v = component_graphs[v][cv_id]
 
                 gm = isomorphism.GraphMatcher(c_u, c_v)
-                if gm.is_isomorphic(): # note: i could be using the exact minimum dfs code but this would have taken eternity 
+                # note: I could be using the exact minimum dfs code but this would have taken eternity 
+                if gm.is_isomorphic(): 
+                    # move to the next u component to match
                     perfect_mapping.update(gm.mapping)
                     matches_found.append((cu_id, cv_id))
                     matched_v.add(cv_id) 
-                    break  # break inner loop; go to next cu_id
+                    break 
 
         # Remove matched components from unmatched sets
         for cu_id, cv_id in matches_found:
@@ -499,22 +590,32 @@ class SocialAnonymizer:
 
         return unmatched_components, perfect_mapping
 
-    def _force_merge_components(self, G, node_u, component_dict, orphan_cid=None):
+    def _force_merge_components(self, G: nx.Graph, component_dict: dict, orphan_cid: int = None):
         """
-        Helper to merge an orphan component into the main body of the neighborhood.
-        Adds an edge between the orphan component and another component.
+        Force the merge of two neighborhood components by adding an edge between them.
+
+        This helper is used when a neighborhood is fragmented into multiple components
+        and at least two components must be connected to proceed with anonymization.
+
+        Args:
+            G: The graph being anonymized.
+            component_dict: Mapping from component identifiers to their corresponding subgraphs.
+            orphan_cid: Optional identifier of a specific component that must be merged.
+                        If not provided, an arbitrary component is selected.
         """
-        # Get all component IDs
+
+        # Collect all component identifiers
         all_cids = list(component_dict.keys())
         
         if len(all_cids) < 2:
             raise Exception("No components to merge, only one component")
 
-        # Identify which components to merge
-        # If orphan_cid is provided, merge it with the first available other component
+        # Select the first component to merge:
+        # - Prefer the orphan component if specified
+        # - Otherwise, fall back to an arbitrary component
         cid_1 = orphan_cid if orphan_cid is not None else all_cids[0]
         
-        # Find a cid_2 that is not cid_1
+        # Select a second, distinct component to merge with
         cid_2 = None
         for c in all_cids:
             if c != cid_1:
@@ -523,27 +624,39 @@ class SocialAnonymizer:
         
         if cid_2 is None: return 
 
-        # Pick one node from each component
-        # We sort by degree to pick "hub" nodes (better utility usually)
+        # Choose representative nodes from each component, prioritizing high-degree nodes
         nodes_1 = sorted(component_dict[cid_1].nodes(), key=lambda n: G.degree(n), reverse=True)
         nodes_2 = sorted(component_dict[cid_2].nodes(), key=lambda n: G.degree(n), reverse=True)
         
         u1 = nodes_1[0]
         u2 = nodes_2[0]
         
-        # Add the edge -> This merges the two components
+        # Add an edge between the selected nodes to merge the two components
         if not G.has_edge(u1, u2):
             G.add_edge(u1, u2)
-            # We don't need to record 'changes' here because the restart 
-            # will catch the new topology in the snapshot comparison.
 
     def _anonymize_pair(self, G: nx.Graph, u: int, v: int, EquivalenceClassDict: dict) -> tuple[list, dict, set]:
-        """Anonymize a pair of nodes by making their neighborhoods isomorphic."""
-        mapping = {}
-        changes = []
-        touched_nodes = set()
+        """
+        Anonymize a pair of nodes by making their neighborhoods isomorphic.
+        
+        Args:
+            G: The graph being anonymized.
+            u: The first node of the pair.
+            v: The second node of the pair.
+            EquivalenceClassDict: Mapping from nodes to their equivalence classes,
+                used to handle rollback when anonymized nodes are reused.
 
-        # Snapshot of neighborhoods
+        Returns:
+            A tuple containing:
+            - A list of structural changes applied (node additions and edge additions).
+            - A mapping between nodes in u’s neighborhood and nodes in v’s neighborhood.
+            - A set of nodes that were touched or modified during anonymization.
+        """
+        mapping = {}            # Final node mapping between neighborhoods
+        changes = []            # Record of structural changes applied
+        touched_nodes = set()   # Nodes affected by the anonymization
+
+        # Snapshot of neighborhoods to compare and track changes
         original_u_nodes = set(G.neighbors(u)).copy()
         original_u_edges = set(G.subgraph(list(original_u_nodes) + [u]).edges()).copy()
         original_v_nodes = set(G.neighbors(v)).copy()
@@ -551,24 +664,28 @@ class SocialAnonymizer:
 
         neighborhood_stable = False
         
+        # Repeat until no forced merges are needed
         while not neighborhood_stable:
             neighborhood_stable = True 
             mapping = {u: v}
 
-            # Get neighborhood components
+            # Step 0. Decompose neighborhoods into connected components
             component_graphs, unmatched_components = self._get_neighborhood_components(G, u, v)
 
-            # Perfect Matches
+            # Step 1. Match perfectly isomorphic components
             unmatched_components, perfect_mapping = self._find_perfect_comp_matches(u, v, component_graphs, unmatched_components)
             mapping.update(perfect_mapping)
 
+            # Step 2. Match remaining components greedily
             while unmatched_components[u] and unmatched_components[v]:
+                # Pick the largest remaining component from each side
                 largest_u_id = max(unmatched_components[u], key=lambda cid: len(component_graphs[u][cid]))
                 largest_v_id = max(unmatched_components[v], key=lambda cid: len(component_graphs[v][cid]))
                 
                 largest_u_component = component_graphs[u][largest_u_id]
                 largest_v_component = component_graphs[v][largest_v_id]
 
+                # Decide which side is the target (larger component)
                 if len(largest_u_component) >= len(largest_v_component):
                     target, source = u, v
                     target_cid, source_cid = largest_u_id, largest_v_id
@@ -577,31 +694,35 @@ class SocialAnonymizer:
                     target_cid, source_cid = largest_v_id, largest_u_id
 
                 try:
+                    # Find the most similar component and generalize it
                     most_sim_id, target_anon_g, source_anon_g, local_mapping = self._most_similar_component(
                         G, target_cid, component_graphs, unmatched_components[source],
                         ref_node=target, src_node=source, EquivalenceClassDict=EquivalenceClassDict
                     )
 
+                    # Normalize mapping direction so it always maps toward v
                     if source == v:
                         mapping.update(local_mapping)
                     else:
                         for target_node, source_node in local_mapping.items():
                             mapping[source_node] = target_node
 
+                    # Apply anonymized components to the graph
                     self._update_graph(G, target_anon_g, source_anon_g, target, source)
 
+                    # Mark these components as matched
                     unmatched_components[target].remove(target_cid)
                     unmatched_components[source].remove(most_sim_id)
 
                 except AnonymizationImpossibleError:
-                    #print(f"DEBUG: Cannot extend component in {source} to match component in {target}. Merging components in {target} instead.")
-                    self._force_merge_components(G, source, component_graphs[source])
+                    # If no nodes to complete matching are available, force a merge and restart
+                    self._force_merge_components(G, component_graphs[source])
                     neighborhood_stable = False
                     break
 
             if not neighborhood_stable: continue
             
-            # Orphaned Components
+            # Step 3: Handle orphan components (only on one side)
             if unmatched_components[u]:
                 target, source, extras = u, v, unmatched_components[u].copy()
             else:
@@ -611,29 +732,31 @@ class SocialAnonymizer:
                 extra_comp = component_graphs[target][cid]
 
                 try:
-                    # Try to create the component in 'source'
+                    # Try to build a matching component on the source side
                     target_anon_g, source_anon_g, local_mapping = self.build_component(
                         G, extra_comp, target, source, EquivalenceClassDict)
 
                 except AnonymizationImpossibleError:
-                    # --- SOLUTION IMPLEMENTATION ---
-                    #print(f"DEBUG: Cannot create new component in {source}. Merging components in {target} instead.")
-                    self._force_merge_components(G, target, component_graphs[target], cid)
+                    # If impossible, merge components and restart
+                    self._force_merge_components(G, component_graphs[target], cid)
                     neighborhood_stable = False
                     break
-                    
+                
+                # Normalize mapping direction
                 if source == v:
                     mapping.update(local_mapping)
                 else:
                     for target_node, source_node in local_mapping.items():
                         mapping[source_node] = target_node
-
+                
+                # Apply anonymized components
                 self._update_graph(G, target_anon_g, source_anon_g, target, source)
                 unmatched_components[target].remove(cid)
 
-        # Calculate Changes & Touched Nodes
+        # Step 4. Final step: compute changes and touched node
         current_u_nodes = set(G.neighbors(u))
         
+        # New nodes added to u's neighborhood
         for n in current_u_nodes:
             if n not in original_u_nodes:
                 changes.append({'type': 'add_node', 'u': n})
@@ -641,18 +764,20 @@ class SocialAnonymizer:
 
         current_subgraph_u = G.subgraph(list(current_u_nodes) + [u])
         
+        # New edges added in u's neighborhood
         for e in current_subgraph_u.edges():
             if (e[0], e[1]) not in original_u_edges and (e[1], e[0]) not in original_u_edges:
                 changes.append({'type': 'add_edge', 'u': e[0], 'v': e[1]})
                 touched_nodes.add(e[0])
                 touched_nodes.add(e[1])
 
+        # Track nodes touched in v's neighborhood
         current_v_nodes = set(G.neighbors(v))
-        
         for n in current_v_nodes:
             if n not in original_v_nodes:
                 touched_nodes.add(n)
 
+        # Track edges touched in v's neighborhood
         current_subgraph_v = G.subgraph(list(current_v_nodes) + [v])
         for e in current_subgraph_v.edges():
             if (e[0], e[1]) not in original_v_edges and (e[1], e[0]) not in original_v_edges:
@@ -663,8 +788,23 @@ class SocialAnonymizer:
 
     def anonymize_graph(self, G: nx.Graph, k: int, alpha: float, beta: float, gamma: float) -> tuple[nx.Graph, dict]:
         """
-        Main method: Anonymize the graph to satisfy k-anonymity.
+        Anonymize a graph to satisfy k-anonymity by grouping nodes into equivalence
+        classes and making their neighborhoods structurally isomorphic.
+
+        Args:
+            G: The input graph to anonymize.
+            k: The desired anonymity level.
+            alpha: Cost parameter for label generalization.
+            beta: Cost parameter for edge modifications.
+            gamma: Cost parameter for vertex modifications.
+
+        Returns:
+            A tuple containing:
+            - The anonymized graph.
+            - A dictionary mapping each node to its equivalence class.
         """
+
+        # Sanity check
         if k > G.number_of_nodes():
             raise ValueError(
                 f"impossible anonymization: k={k} exceeds number of nodes ({G.number_of_nodes()}).")
@@ -673,22 +813,27 @@ class SocialAnonymizer:
         self.beta = beta
         self.gama = gamma
         
+        # Work on a copy of the original graph
         G_anon = G.copy()
+
+        # Initialize vertex processing order (largest neighborhoods first)
         VertexList = sorted(G_anon.nodes, key=lambda v: self._neighborhood_size_key(G_anon, v), reverse=True)
 
         EquivalenceClassDict = {}
         nx.set_node_attributes(G_anon, False, 'anonymized')
 
+        # Main loop: process until all vertices are anonymized
         while VertexList:
             SeedVertex = VertexList.pop(0)
             deg_seed = G_anon.degree[SeedVertex]
 
-            # --- Candidate Selection ---
+            # Candidate selection based on degree similarity
             costs = {}
             for v in VertexList:
                 deg_v = G_anon.degree[v]
                 costs[v] = abs(deg_seed - deg_v)
 
+            # Select up to k-1 closest nodes by degree
             if len(VertexList) >= (2*k - 1):
                 sorted_cost = sorted(costs.items(), key=lambda item: item[1])
                 candidate_set = [node for node, _ in sorted_cost[:k-1]]
@@ -697,48 +842,43 @@ class SocialAnonymizer:
 
             current_group = [SeedVertex] + candidate_set
             
-            # Temporarily register the group mapping (will be finalized if successful)
+            # Tentatively register the equivalence class
             for v in current_group:
                 EquivalenceClassDict[v] = current_group
 
-            # --- RESTART MECHANISM START ---
+            # Restart Mechanism: The group may need to be rebuilt if conflicts occur
             group_stable = False
             while not group_stable:
-                group_stable = True  # Assume success, set to False if we need to restart
+                # Assume success, set to False if we need to restart
+                group_stable = True  
                 group_mappings = {} 
                 
-                # We collect broken groups here, but apply them only if the group stabilizes
+                # Broken groups are collected but applied only if the group stabilizes
                 pending_broken_groups = [] 
 
                 for j in range(1, len(current_group)):
                     uj = current_group[j]
-                    processed_members = set(current_group[1:j]) # Members processed in previous iterations
+                    processed_members = set(current_group[1:j]) 
                     
-                    # 1. Anonymize Pair
+                    # Step 1. Anonymize the pair (SeedVertex, uj)
                     changes, mapping, primary_touched = self._anonymize_pair(G_anon, SeedVertex, uj, EquivalenceClassDict)
                     group_mappings[uj] = mapping
 
-                    # --- DETECTION LOGIC START ---
-                    # Check if 'primary_touched' contains any member we already processed (indices 1 to j-1).
-                    # If so, the isomorphism for those members is potentially broken because 
-                    # an edge was added to them outside of the sync process.
+                    # Conflict detection: If the anonymization touched a previously processed group member,
+                    # the group's isomorphism may be broken → restart
                     intra_group_conflict = primary_touched.intersection(processed_members)
                     
                     if intra_group_conflict:
-
+                        # Break the loop over group member, restart the loop over VertexList
                         group_stable = False
-                        break # Break the 'for j' loop, 'while' loop will restart
-                    # --- DETECTION LOGIC END ---
+                        break 
 
-                    # 2. Sync changes to previous members
+                    # Step 2. Sync changes to previous members
                     secondary_touched = set()
                     if j > 1:
-                        #print(f"Synching changes to {current_group[1:j]}")
                         secondary_touched = self._sync_group_changes(G_anon, current_group[1:j], SeedVertex, changes, group_mappings)
-                        # Note: _sync_group_changes explicitly handles keeping 1..j-1 consistent, so 
-                        # we don't usually check secondary_touched for intra-group conflict here.
 
-                    # 3. Collect external broken groups (Ripple Effect)
+                    # Step 3. Detect ripple effects on already anonymized external nodes
                     all_touched_nodes = primary_touched.union(secondary_touched)
                     
                     for node in all_touched_nodes:
@@ -749,11 +889,10 @@ class SocialAnonymizer:
                                 if broken_group not in pending_broken_groups:
                                     pending_broken_groups.append(broken_group)
 
-                # End of 'for j' loop.
-                # If group_stable is still True, we finished the group successfully.
-                
+                # If group_stable is still True, we finished the group successfully
+                # We can apply ripple-effect rollbacks
                 if group_stable:
-                    # Apply the external broken groups logic now that we are sure this group is done
+    
                     all_broken_members = set()
                     for bg in pending_broken_groups:
                         for member in bg:
@@ -763,15 +902,14 @@ class SocialAnonymizer:
                                 EquivalenceClassDict.pop(member, None) # Remove mapping
                                 if member not in VertexList:
                                     VertexList.append(member)
-            # --- RESTART MECHANISM END ---
 
-            # Finalize current group
+            # Finalize the current equivalence class
             for node in current_group:
                 G_anon.nodes[node]['anonymized'] = True
                 if node in VertexList:
                     VertexList.remove(node)
 
-            # Re-sort VertexList as degrees might have changed
+            # Re-sort remaining vertices as the graph structure may have changed
             VertexList.sort(key=lambda v: self._neighborhood_size_key(G_anon, v), reverse=True)
 
         return G_anon, EquivalenceClassDict

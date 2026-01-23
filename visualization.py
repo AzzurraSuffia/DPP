@@ -24,6 +24,26 @@ def plot_graph(comp, title="Graph"):
     plt.axis('off')
     plt.show()
 
+def plot_runtime_comparison(ns, times_a, times_b, label_a, label_b, suptitle):
+
+    _, axes = plt.subplots(1, 2, figsize=(12, 5))
+
+    axes[0].plot(ns, times_a, marker='o', color='tab:blue')
+    axes[0].set_title(label_a)
+    axes[0].set_xlabel('Number of nodes (n)')
+    axes[0].set_ylabel('Average runtime (seconds)')
+    axes[0].grid(True, which='both')
+
+    axes[1].plot(ns, times_b, marker='o', color='tab:orange')
+    axes[1].set_title(label_b)
+    axes[1].set_xlabel('Number of nodes (n)')
+    axes[1].set_ylabel('Average runtime (seconds)')
+    axes[1].grid(True, which='both')
+
+    plt.suptitle(suptitle)
+    plt.tight_layout(rect=[0, 0, 1, 0.95])
+    plt.show()
+
 def generate_degree_anonymization_gif(
     G_original: nx.Graph,
     social_anonymizer,
