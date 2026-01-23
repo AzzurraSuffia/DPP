@@ -1,8 +1,17 @@
-# label domain class definition 
 class LabelDomain():
+    """
+    Represents a hierarchical label domain (taxonomy) used for generalization.
+
+    Labels are organized as a tree with a single root, assumed to be always '*'.
+    Leaf labels represent the most specific categories.
+    """
+
     def __init__(self, labels, children, root):
+        """
+        Initialize a label domain.
+        """
         self.labels = labels
-        self.root = root
+        self.root = root 
         self.children = children # dict mapping node to children
         self.parent = self._build_parent_map()
 
@@ -14,6 +23,9 @@ class LabelDomain():
         return parent
 
     def size(self, l):
+        """
+        Return the number of leaf labels in the subtree rooted at l.
+        """
         if not self.children[l]:
             return 1 # it's a leaf
         
@@ -23,13 +35,21 @@ class LabelDomain():
     def is_leaf(self, l):
         return not self.children[l] # no children
 
-    def normalized_certainty_penalty(self, l): # from 0 (a leaf, max certainty) to 1 (most general label, min certainty)
+    def normalized_certainty_penalty(self, l): 
+        """
+        Compute a normalized certainty penalty for label l.
+        It ranges from 0 (a leaf, max certainty) to 1 (most general label, min certainty).
+        """
         root_size = self.size(self.root)
         if root_size <= 1:
             return 0.0  # degenerate domain
         return (self.size(l) - 1) / (root_size - 1)
     
     def find_label_common_parent(self, l1, l2):
+        """
+        Return the lowest common ancestor of two labels in the hierarchy.
+        If either label is not in the domain, returns None.
+        """
         if l1 not in self.labels or l2 not in self.labels:
             return None
 

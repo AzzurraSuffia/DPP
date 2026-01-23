@@ -1,13 +1,20 @@
 from functools import cmp_to_key
 import networkx as nx
 
-# note: if you introduce back labels, you should define a code also for isolated nodes
+# note: if you introduce back labels, you should define a code also for isolated nodes and add back labels in the code
 
 class MDFSCoder:
+    """
+    Computes the canonical minimum DFS code for an undirected graph.
+    """
+
     def __init__(self):
         self.best_code = None
 
-    def get_code(self, G: nx.Graph):
+    def get_minimum_code(self, G: nx.Graph):
+        """
+        Computes the canonical minimum DFS code for an undirected graph.
+        """
         if G.number_of_nodes() == 0: return []
         self.best_code = None
         
@@ -24,9 +31,13 @@ class MDFSCoder:
             
         return self.best_code
     
+    # custom function checking isomoprhism based on MDFS
     def is_isomoprhic(self, G: nx.Graph, H: nx.Graph)-> bool:
-        code1 = self.get_code(G)
-        code2 = self.get_code(H)
+        """
+        Check graph isomorphism by comparing canonical DFS codes.
+        """
+        code1 = self.get_minimum_code(G)
+        code2 = self.get_minimum_code(H)
 
         if code1 == code2: 
             return True
@@ -34,25 +45,34 @@ class MDFSCoder:
             return False
 
     def _dfs_search(self, G, mapping, current_code, used_edges):
-        # --- 1. PRUNING ---
+        """
+        Recursive DFS enumeration with pruning.
+
+        Maintains:
+        - mapping: real node → DFS index
+        - current_code: partial DFS code
+        - used_edges: visited undirected edges
+        """
+
+        # Step 1. Pruning
         if self.best_code is not None:
             # If current partial code is already worse than best found, stop.
             if self._compare_code_sequences(current_code, self.best_code) == 1:
                 return
 
-        # --- 2. SUCCESS ---
+        # Step 2. A complete code is reached
         if len(current_code) == G.number_of_edges():
+            # since we pruned all codes which are worse than the best, this is the new best
             self.best_code = list(current_code)
             return
 
-        # --- 3. GENERATE CANDIDATES ---
-        # Exact: Finds ALL valid next edges (Backtracking branching)
+        # Step 3. Find next candidates
         candidates = self._get_valid_extensions(G, mapping, used_edges)
         
         # Sort to try the most promising edge first
         candidates.sort(key=cmp_to_key(self._compare_candidates))
 
-        # --- 4. RECURSE (Branching) ---
+        # Step 4. Branch over candidates
         for cand in candidates:
             edge = cand['edge']
             real_target = cand['real_target']
@@ -72,20 +92,27 @@ class MDFSCoder:
             current_code.pop()
 
     def _get_valid_extensions(self, G, mapping, used_edges):
-        """Finds all forward/backward edges from the rightmost path."""
+        """
+        Generate valid forward and backward candidates.
+        Explore candidates starting from the deepest DFS node.
+        """
         candidates = []
         dfs_to_real = {v: k for k, v in mapping.items()}
-        current_max_dfs = len(mapping) - 1
+        current_max_dfs = len(mapping) - 1 # current last node
 
+        # start: current_max_dfs, stop: -1 (not included), step: -1
         for u_dfs in range(current_max_dfs, -1, -1):
-            u_real = dfs_to_real[u_dfs]
-            neighbors = G.neighbors(u_real)
+            u_real = dfs_to_real[u_dfs] # get node id
+            neighbors = G.neighbors(u_real) # get neighbors
             found_at_level = False
             
             for v_real in neighbors:
                 edge_key = tuple(sorted((u_real, v_real)))
-                if edge_key in used_edges: continue
-
+                # skip the edge if already visited
+                if edge_key in used_edges: 
+                    continue
+                
+                # if v has a DFS index, then it's a backward edge
                 if v_real in mapping:
                     if u_dfs == current_max_dfs: # Back edge constraint
                         candidates.append({
@@ -93,6 +120,7 @@ class MDFSCoder:
                             'real_target': v_real, 'real_edge_key': edge_key
                         })
                         found_at_level = True
+                # if v has not a DFS index, then it's a forward edge
                 else:
                     candidates.append({
                         'type': 'fwd', 'edge': (u_dfs, current_max_dfs + 1),
@@ -100,25 +128,38 @@ class MDFSCoder:
                     })
                     found_at_level = True
             
-            if found_at_level: break
+            # only consider candidates from the deepest possible point in the DFS tree
+            if found_at_level: 
+                break
         return candidates
 
     def _compare_candidates(self, c1, c2):
+        """
+        Helper to allow the usage of cmp_to_key in sorting
+        """
         return self._compare_edges(c1['edge'], c2['edge'])
 
     def _compare_code_sequences(self, codeA, codeB):
+        """
+        Lexicographically compare two DFS code sequences.
+        """
         min_len = min(len(codeA), len(codeB))
+
+        # comapre edge by edge to find the best code
         for k in range(min_len):
             res = self._compare_edges(codeA[k], codeB[k])
             if res != 0: return res
-        if len(codeA) < len(codeB): return -1
-        if len(codeA) > len(codeB): return 1
-        return 0
+
+        # if equal up to min_len, shorter one is better
+        if len(codeA) < len(codeB): 
+            return -1
+        if len(codeA) > len(codeB): 
+            return 1 
+        return 0 
 
     def _compare_edges(self, e1, e2):
         """
         Compares two edges based on the paper's 4 Rules (Section III-A).
-        e = (u1, v1), e' = (u2, v2)
         """
         u1, v1 = e1
         u2, v2 = e2
