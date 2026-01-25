@@ -11,8 +11,8 @@
 ## Limitations
 The custom implementation of the anonymization algorithm used in this work is not guaranteed to succeed in all cases.   
 In particular, for certain input graphs and parameter settings, the algorithm may fail to produce a valid anonymized graph. Failure modes include:   
-i. returning a graph that is not isomorphic with respect to the equivalence classes induced during anonymization, and    
-ii. raising an `AnonymizationImpossibleError` when no suitable auxiliary node can be found outside the neighborhoods of the nodes being anonymized.
+- returning a graph that is not isomorphic with respect to the equivalence classes induced during anonymization, and
+- raising an `AnonymizationImpossibleError` when no suitable auxiliary node can be found outside the neighborhoods of the nodes being anonymized.
 
 ## File Structure
 
