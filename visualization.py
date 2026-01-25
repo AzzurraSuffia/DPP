@@ -49,6 +49,7 @@ def generate_degree_anonymization_gif(
     social_anonymizer,
     k_values: list[int],
     output_dir: str,
+    title: str,
     gif_name: str = "degree_evolution.gif",
     duration: int = 1000
 ):
@@ -72,7 +73,7 @@ def generate_degree_anonymization_gif(
         degrees = [d for _, d in G_anon.degree()]
 
         # Create figure with two subplots
-        fig, (ax_graph, ax_hist) = plt.subplots(1, 2, figsize=(12, 5))
+        fig, (ax_graph, ax_hist) = plt.subplots(1, 2, figsize=(10, 5))
 
         # Left subplot: graph
         pos = nx.spring_layout(G_anon, seed=42)
@@ -91,7 +92,7 @@ def generate_degree_anonymization_gif(
         # Right subplot: degree histogram
         ax_hist.hist(
             degrees,
-            bins=range(min(degrees), max(degrees) + 2),
+            bins=range(0, n + 2),
             color="skyblue",
             edgecolor="black",
             align="left"
@@ -103,7 +104,8 @@ def generate_degree_anonymization_gif(
         ax_hist.set_yticks(range(0, n+1))
         ax_hist.grid(True, axis="y", alpha=0.7)
 
-        plt.tight_layout()
+        fig.suptitle(title, fontsize=14)
+        plt.tight_layout(rect=[0, 0, 1, 0.95])
 
         # Save frame
         frame_path = os.path.join(output_dir, f"frame_k_{k}.png")
@@ -122,6 +124,7 @@ def generate_betweenness_anonymization_gif(
     social_anonymizer,
     k_values: list[int],
     output_dir: str,
+    title: str,
     gif_name: str = "betweenness_evolution.gif",
     duration: int = 1000
 ):
@@ -165,7 +168,8 @@ def generate_betweenness_anonymization_gif(
         cbar = fig.colorbar(sm, ax=ax, shrink=0.7)
         cbar.set_label("Betweenness Centrality")
         
-        plt.tight_layout()
+        fig.suptitle(title, fontsize=14)
+        plt.tight_layout(rect=[0, 0, 1, 0.95])
         
         # Save frame
         frame_path = os.path.join(output_dir, f"frame_k_{k}.png")
@@ -184,6 +188,7 @@ def generate_closeness_anonymization_gif(
     social_anonymizer,
     k_values: list[int],
     output_dir: str,
+    title: str,
     gif_name: str = "closeness_evolution.gif",
     duration: int = 1000
 ):
@@ -227,7 +232,8 @@ def generate_closeness_anonymization_gif(
         cbar = fig.colorbar(sm, ax=ax, shrink=0.7)
         cbar.set_label("Closeness Centrality")
         
-        plt.tight_layout()
+        fig.suptitle(title, fontsize=14)
+        plt.tight_layout(rect=[0, 0, 1, 0.95])
         
         # Save frame
         frame_path = os.path.join(output_dir, f"frame_k_{k}.png")
