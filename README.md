@@ -1,4 +1,4 @@
-# DPP - Final project
+# LocalIsomorphismAnonymizer
 
 **Course:** Data Protection and Privacy    
 **Paper:** B. Zhou and J. Pei, "Preserving Privacy in Social Networks Against Neighborhood Attacks," 2008 IEEE 24th International Conference on Data Engineering, Cancun, Mexico, 2008, pp. 506-515, doi: 10.1109/ICDE.2008.4497459. keywords: {Social network services;Privacy;Loss measurement;Data privacy;Knowledge engineering;Publishing;Data models},
@@ -15,6 +15,9 @@ In particular, for certain input graphs and parameter settings, the algorithm ma
 - raising an `AnonymizationImpossibleError` when no suitable auxiliary node can be found outside the neighborhoods of the nodes being anonymized.
 
 ## File Structure
+
+- **`docs/project_slides.pdf`**    
+  A set of slides illustrating the scope and structure of the project.
 
 - **`analysis.ipynb`**  
   The main Jupyter Notebook reporting the analysis of the implemented anonymization algorithm. It includes examples, experiments, and visualizations of results.
