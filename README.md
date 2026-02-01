@@ -1,7 +1,8 @@
 # DPP - Final project
 
 **Course:** Data Protection and Privacy    
-**Paper:** *Preserving Privacy in Social Networks Against Neighborhood Attacks*      
+**Paper:** B. Zhou and J. Pei, "Preserving Privacy in Social Networks Against Neighborhood Attacks," 2008 IEEE 24th International Conference on Data Engineering, Cancun, Mexico, 2008, pp. 506-515, doi: 10.1109/ICDE.2008.4497459. keywords: {Social network services;Privacy;Loss measurement;Data privacy;Knowledge engineering;Publishing;Data models},
+
 
 ## Assumptions
 1. Label generalization is omitted in the anonymization strategy to simplify the logic.
